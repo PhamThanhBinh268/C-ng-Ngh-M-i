@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  toy-store-web:
+    container_name: toy-store-web
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # Cấu hình biến môi trường Supabase tại đây để Docker truyền vào container
+      # - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      # - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    restart: unless-stopped
