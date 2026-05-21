@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import Link from "next/link";
 import { useAuthStore } from "@/store/authStore";
 import { Sparkles } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("admin@toystore.com");
@@ -17,25 +18,57 @@ export default function LoginPage() {
   
   const login = useAuthStore(state => state.login);
 
+  const getAuthErrorMessage = (message: string, status?: number | null) => {
+    if (status === 404) {
+      return "Không tìm thấy endpoint Supabase. Kiểm tra NEXT_PUBLIC_SUPABASE_URL và khởi động lại server.";
+    }
+    if (status === 400) {
+      return message || "Email hoặc mật khẩu không đúng.";
+    }
+    return message || "Đăng nhập thất bại. Vui lòng thử lại.";
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    
-    // Giả lập API Login cho Prototype để người dùng xem luôn được UI
-    setTimeout(() => {
-      if (password.length >= 6) {
-        login({
-          id: "u1",
-          name: email.split("@")[0],
-          email: email
-        });
-        window.location.href = "/";
-      } else {
-        setError("Mật khẩu phải lớn hơn 6 ký tự.");
-        setLoading(false);
-      }
-    }, 1000);
+
+    if (password.length < 6) {
+      setError("Mật khẩu phải lớn hơn 6 ký tự.");
+      setLoading(false);
+      return;
+    }
+
+    let supabase;
+    try {
+      supabase = createClient();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể khởi tạo Supabase client.");
+      setLoading(false);
+      return;
+    }
+
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (signInError) {
+      setError(getAuthErrorMessage(signInError.message, signInError.status));
+      setLoading(false);
+      return;
+    }
+
+    const user = data.user;
+    if (user) {
+      login({
+        id: user.id,
+        name: user.user_metadata?.full_name || user.email?.split("@")[0] || "",
+        email: user.email || email
+      });
+    }
+
+    window.location.href = "/";
   };
 
   return (

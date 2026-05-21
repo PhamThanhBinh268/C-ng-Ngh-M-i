@@ -1,26 +1,121 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useCartStore } from "@/store/cartStore";
 import { Star, Minus, Plus, ShoppingCart, ShieldCheck, Truck, RotateCcw, Heart } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { PRODUCTS } from "@/lib/data";
+import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { createClient } from "@/utils/supabase/client";
+
+type Product = {
+  id: string;
+  name: string;
+  price: number;
+  originalPrice: number;
+  image_url: string;
+  rating: number | null;
+  reviews: number | null;
+  brand: string | null;
+  age: string;
+  stock: number;
+  isSale: boolean;
+  description: string;
+  category: string;
+};
 
 export default function ProductDetailPage() {
   const params = useParams();
   const id = params.id as string;
-  const product = PRODUCTS.find(p => p.id === id) || PRODUCTS[0];
+  const router = useRouter();
+  const [product, setProduct] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   
   const [quantity, setQuantity] = useState(1);
   const [isLiked, setIsLiked] = useState(false);
   const addItem = useCartStore(state => state.addItem);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const loadProduct = async () => {
+      setLoading(true);
+      setLoadError(null);
+
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, name, description, price, original_price, stock, image_url, age_range, brand, rating, reviews, is_sale, categories(name)")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (!isActive) return;
+
+      if (error) {
+        setLoadError(error.message);
+        setLoading(false);
+        return;
+      }
+
+      if (!data) {
+        setProduct(null);
+        setLoading(false);
+        return;
+      }
+
+      setProduct({
+        id: data.id,
+        name: data.name,
+        price: Number(data.price || 0),
+        originalPrice: Number(data.original_price || data.price || 0),
+        image_url: data.image_url || "",
+        rating: data.rating ? Number(data.rating) : null,
+        reviews: Number.isFinite(data.reviews) ? data.reviews : null,
+        brand: data.brand || null,
+        age: data.age_range || "Mọi lứa tuổi",
+        stock: Number(data.stock || 0),
+        isSale: Boolean(data.is_sale),
+        description: data.description || "",
+        category: data.categories?.name || ""
+      });
+      setLoading(false);
+    };
+
+    loadProduct();
+
+    return () => {
+      isActive = false;
+    };
+  }, [id]);
+
   const handleAddToCart = () => {
+    if (!product) return;
     addItem(product, quantity);
   };
+
+  const handleBuyNow = () => {
+    if (!product) return;
+    addItem(product, quantity);
+    router.push("/checkout");
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-slate-500">Đang tải sản phẩm...</div>
+      </div>
+    );
+  }
+
+  if (loadError || !product) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-slate-500">Không tải được sản phẩm.</div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-slate-50 min-h-screen py-12">
@@ -77,7 +172,7 @@ export default function ProductDetailPage() {
                 <span className="text-sm font-extrabold text-primary uppercase tracking-widest bg-primary/10 px-3 py-1 rounded-full">{product.brand}</span>
                 <div className="flex items-center gap-1 bg-yellow-50 text-yellow-700 px-3 py-1 rounded-full text-sm font-bold border border-yellow-200">
                   <Star className="w-4 h-4 fill-yellow-500 text-yellow-500" />
-                  {product.rating} ({product.reviews} đánh giá)
+                  {(product.rating ?? 0).toFixed(1)} ({product.reviews ?? 0} đánh giá)
                 </div>
               </div>
               
@@ -136,7 +231,12 @@ export default function ProductDetailPage() {
                   </Button>
                 </div>
 
-                <Button size="lg" variant="secondary" className="w-full rounded-full text-lg h-14 bg-orange-100 text-orange-600 hover:bg-orange-200 border border-orange-200 font-bold transition-colors">
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  className="w-full rounded-full text-lg h-14 bg-orange-100 text-orange-600 hover:bg-orange-200 border border-orange-200 font-bold transition-colors"
+                  onClick={handleBuyNow}
+                >
                   Mua Ngay
                 </Button>
               </div>

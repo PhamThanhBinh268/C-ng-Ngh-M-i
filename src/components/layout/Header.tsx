@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/authStore';
 export default function Header() {
   const totalItems = useCartStore((state) => state.totalItems());
   const { user, isAuthenticated } = useAuthStore();
+  const isAdmin = Boolean(user && user.email === "admin@toystore.com");
   const pathname = usePathname();
   const router = useRouter();
   const [scrolled, setScrolled] = useState(false);
@@ -104,7 +105,10 @@ export default function Header() {
                   <div className="text-xs text-slate-500 truncate">{user.email}</div>
                 </div>
                 <div className="p-2">
-                  <Link href="/admin" className="block px-3 py-2 text-sm font-medium text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl transition-colors">Trang Quản Trị</Link>
+                  <Link href="/profile" className="block px-3 py-2 text-sm font-medium text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl transition-colors">Hồ sơ</Link>
+                  {isAdmin && (
+                    <Link href="/admin" className="block px-3 py-2 text-sm font-medium text-slate-600 hover:text-primary hover:bg-slate-50 rounded-xl transition-colors">Trang Quản Trị</Link>
+                  )}
                   <button 
                     onClick={() => useAuthStore.getState().logout()} 
                     className="w-full text-left px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors mt-1"

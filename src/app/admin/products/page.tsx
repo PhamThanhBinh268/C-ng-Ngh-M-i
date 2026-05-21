@@ -1,166 +1,428 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Plus, Search, Edit, Trash2 } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
+import { uploadImageToCloudinary } from "@/lib/cloudinary";
 
-import { Plus, Search, UploadCloud, Edit, Trash2 } from "lucide-react";
-import { PRODUCTS } from "@/lib/data";
+const emptyForm = {
+  name: "",
+  slug: "",
+  description: "",
+  price: "",
+  original_price: "",
+  stock: "",
+  image_url: "",
+  age_range: "",
+  brand: "",
+  category_id: "",
+  is_new: false,
+  is_sale: false,
+};
+
+type ProductRow = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  price: number;
+  original_price: number | null;
+  stock: number;
+  image_url: string | null;
+  age_range: string | null;
+  brand: string | null;
+  category_id: string | null;
+  is_new: boolean;
+  is_sale: boolean;
+};
+
+type CategoryRow = {
+  id: string;
+  name: string;
+};
 
 export default function AdminProducts() {
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const isEditing = Boolean(editingId);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadData = async () => {
+      setLoading(true);
+      setError(null);
+      const supabase = createClient();
+      const [{ data: categoryRows }, { data: productRows, error: productError }] = await Promise.all([
+        supabase.from("categories").select("id, name").order("name"),
+        supabase
+          .from("products")
+          .select("id, name, slug, description, price, original_price, stock, image_url, age_range, brand, category_id, is_new, is_sale")
+          .order("created_at", { ascending: false }),
+      ]);
+
+      if (!isActive) return;
+      if (productError) {
+        setError(productError.message);
+        setLoading(false);
+        return;
+      }
+
+      setCategories((categoryRows || []) as CategoryRow[]);
+      setProducts((productRows || []) as ProductRow[]);
+      setLoading(false);
+    };
+
+    loadData();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const filteredProducts = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    if (!keyword) return products;
+    return products.filter((product) => {
+      return (
+        product.name.toLowerCase().includes(keyword) ||
+        product.slug.toLowerCase().includes(keyword) ||
+        (product.brand || "").toLowerCase().includes(keyword)
+      );
+    });
+  }, [products, search]);
+
+  const resetForm = () => {
+    setForm(emptyForm);
+    setEditingId(null);
+  };
+
+  const handleSubmit = async () => {
+    setError(null);
+    if (!form.name.trim() || !form.slug.trim() || !form.price || !form.stock) {
+      setError("Vui lòng nhập đầy đủ tên, slug, giá và tồn kho.");
+      return;
+    }
+
+    const supabase = createClient();
+    const payload = {
+      name: form.name.trim(),
+      slug: form.slug.trim(),
+      description: form.description.trim() || null,
+      price: Number(form.price || 0),
+      original_price: form.original_price ? Number(form.original_price) : null,
+      stock: Number(form.stock || 0),
+      image_url: form.image_url.trim() || null,
+      age_range: form.age_range.trim() || null,
+      brand: form.brand.trim() || null,
+      category_id: form.category_id || null,
+      is_new: form.is_new,
+      is_sale: form.is_sale,
+    };
+
+    if (editingId) {
+      const { error: updateError } = await supabase
+        .from("products")
+        .update(payload)
+        .eq("id", editingId);
+
+      if (updateError) {
+        setError(updateError.message);
+        return;
+      }
+
+      setProducts((prev) => prev.map((item) => (item.id === editingId ? { ...item, ...payload } : item)));
+      resetForm();
+      setShowForm(false);
+      return;
+    }
+
+    const { data: newRow, error: insertError } = await supabase
+      .from("products")
+      .insert(payload)
+      .select("id, name, slug, description, price, original_price, stock, image_url, age_range, brand, category_id, is_new, is_sale")
+      .single();
+
+    if (insertError || !newRow) {
+      setError(insertError?.message || "Không thể thêm sản phẩm.");
+      return;
+    }
+
+    setProducts((prev) => [newRow as ProductRow, ...prev]);
+    resetForm();
+    setShowForm(false);
+  };
+
+  const handleImageUpload = async (file: File) => {
+    setUploading(true);
+    setError(null);
+    try {
+      const result = await uploadImageToCloudinary(file);
+      setForm((prev) => ({ ...prev, image_url: result.secure_url }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể tải ảnh lên.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleEdit = (product: ProductRow) => {
+    setEditingId(product.id);
+    setForm({
+      name: product.name,
+      slug: product.slug,
+      description: product.description || "",
+      price: String(product.price ?? ""),
+      original_price: product.original_price ? String(product.original_price) : "",
+      stock: String(product.stock ?? ""),
+      image_url: product.image_url || "",
+      age_range: product.age_range || "",
+      brand: product.brand || "",
+      category_id: product.category_id || "",
+      is_new: Boolean(product.is_new),
+      is_sale: Boolean(product.is_sale),
+    });
+    setShowForm(true);
+  };
+
+  const handleDelete = async (productId: string) => {
+    const supabase = createClient();
+    const { error: deleteError } = await supabase
+      .from("products")
+      .delete()
+      .eq("id", productId);
+
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+
+    setProducts((prev) => prev.filter((item) => item.id !== productId));
+  };
+
+  const getCategoryName = (categoryId: string | null) => {
+    if (!categoryId) return "-";
+    return categories.find((cat) => cat.id === categoryId)?.name || "-";
+  };
 
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-3xl font-bold text-slate-900">Quản Lý Sản Phẩm</h1>
-        <Button onClick={() => setShowAddForm(!showAddForm)} className="gap-2">
-          <Plus className="w-4 h-4" /> Thêm Đồ Chơi Mới
+        <Button onClick={() => setShowForm((prev) => !prev)} className="gap-2">
+          <Plus className="w-4 h-4" /> {showForm ? "Đóng" : "Thêm sản phẩm"}
         </Button>
       </div>
 
-      {showAddForm && (
+      {showForm && (
         <Card className="mb-8 border-primary shadow-md">
           <CardHeader>
-            <CardTitle>Thêm/Sửa Sản Phẩm (Đồ Chơi)</CardTitle>
+            <CardTitle>{isEditing ? "Cập nhật sản phẩm" : "Thêm sản phẩm mới"}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            {error && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {error}
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Thông tin cơ bản */}
               <div className="space-y-4">
-                <h3 className="font-bold text-slate-700 border-b pb-2">Thông tin cơ bản</h3>
                 <div>
                   <Label>Tên sản phẩm</Label>
-                  <Input placeholder="VD: Bộ xếp hình LEGO City..." className="mt-1" />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Mã SKU</Label>
-                    <Input placeholder="VD: LEGO-CT-102" className="mt-1" />
-                  </div>
-                  <div>
-                    <Label>Thương hiệu</Label>
-                    <Input placeholder="VD: LEGO, Hot Wheels" className="mt-1" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label>Giá bán (VNĐ)</Label>
-                    <Input type="number" placeholder="500000" className="mt-1" />
-                  </div>
-                  <div>
-                    <Label>Giá nhập (VNĐ)</Label>
-                    <Input type="number" placeholder="400000" className="mt-1" />
-                  </div>
-                  <div>
-                    <Label>Giá KM (VNĐ)</Label>
-                    <Input type="number" placeholder="450000" className="mt-1" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Thuộc tính đồ chơi */}
-              <div className="space-y-4">
-                <h3 className="font-bold text-slate-700 border-b pb-2">Thuộc tính & Kho hàng</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Độ tuổi phù hợp</Label>
-                    <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background mt-1">
-                      <option>0 - 3 tuổi</option>
-                      <option>3 - 6 tuổi</option>
-                      <option>6 - 12 tuổi</option>
-                      <option>Trên 12 tuổi</option>
-                    </select>
-                  </div>
-                  <div>
-                    <Label>Chất liệu</Label>
-                    <Input placeholder="VD: Nhựa ABS an toàn, Gỗ..." className="mt-1" />
-                  </div>
+                  <Input value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} />
                 </div>
                 <div>
-                  <Label>Cảnh báo an toàn</Label>
-                  <Input placeholder="VD: Có chi tiết nhỏ, không dành cho trẻ dưới 3 tuổi" className="mt-1 text-red-500 placeholder:text-red-300" />
+                  <Label>Slug</Label>
+                  <Input value={form.slug} onChange={(e) => setForm((prev) => ({ ...prev, slug: e.target.value }))} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Số lượng Tồn Kho</Label>
-                    <Input type="number" placeholder="100" className="mt-1" />
-                  </div>
-                  <div>
-                    <Label>Cảnh báo khi dưới (sp)</Label>
-                    <Input type="number" placeholder="10" className="mt-1" />
+                <div>
+                  <Label>Thương hiệu</Label>
+                  <Input value={form.brand} onChange={(e) => setForm((prev) => ({ ...prev, brand: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Độ tuổi</Label>
+                  <Input value={form.age_range} onChange={(e) => setForm((prev) => ({ ...prev, age_range: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Danh mục</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                    value={form.category_id}
+                    onChange={(e) => setForm((prev) => ({ ...prev, category_id: e.target.value }))}
+                  >
+                    <option value="">-- Chọn danh mục --</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label>Ảnh sản phẩm</Label>
+                  <div className="flex flex-col gap-2">
+                    <Input
+                      value={form.image_url}
+                      onChange={(e) => setForm((prev) => ({ ...prev, image_url: e.target.value }))}
+                      placeholder="https://..."
+                    />
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleImageUpload(file);
+                          }
+                        }}
+                      />
+                      <span className="text-xs text-slate-500">
+                        {uploading ? "Đang tải ảnh..." : "Chọn ảnh từ thiết bị"}
+                      </span>
+                    </div>
+                    {form.image_url && (
+                      <img src={form.image_url} alt="preview" className="h-20 w-20 rounded border object-cover" />
+                    )}
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Quản lý hình ảnh/Video */}
-            <div className="space-y-4">
-              <h3 className="font-bold text-slate-700 border-b pb-2">Hình ảnh / Video</h3>
-              <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center text-slate-500 bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer">
-                <UploadCloud className="w-10 h-10 mb-2 text-primary" />
-                <p className="font-medium">Kéo thả hình ảnh đồ chơi vào đây (Hỗ trợ Cloudinary)</p>
-                <p className="text-xs mt-1">Nên có ảnh mặt trước, mặt sau và chi tiết sản phẩm.</p>
+              <div className="space-y-4">
+                <div>
+                  <Label>Giá bán</Label>
+                  <Input type="number" value={form.price} onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Giá gốc</Label>
+                  <Input type="number" value={form.original_price} onChange={(e) => setForm((prev) => ({ ...prev, original_price: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Tồn kho</Label>
+                  <Input type="number" value={form.stock} onChange={(e) => setForm((prev) => ({ ...prev, stock: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Mô tả</Label>
+                  <textarea
+                    className="w-full min-h-[120px] rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={form.description}
+                    onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+                  />
+                </div>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={form.is_new}
+                      onChange={(e) => setForm((prev) => ({ ...prev, is_new: e.target.checked }))}
+                    />
+                    Sản phẩm mới
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={form.is_sale}
+                      onChange={(e) => setForm((prev) => ({ ...prev, is_sale: e.target.checked }))}
+                    />
+                    Đang giảm giá
+                  </label>
+                </div>
               </div>
             </div>
 
             <div className="flex justify-end gap-4 pt-4 border-t">
-              <Button variant="outline" onClick={() => setShowAddForm(false)}>Hủy</Button>
-              <Button>Lưu Sản Phẩm</Button>
+              <Button variant="outline" onClick={resetForm}>Hủy</Button>
+              <Button onClick={handleSubmit}>{isEditing ? "Lưu cập nhật" : "Lưu sản phẩm"}</Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Danh sách sản phẩm */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
-          <CardTitle>Danh Sách Đồ Chơi</CardTitle>
+          <CardTitle>Danh sách sản phẩm</CardTitle>
           <div className="relative w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <Input placeholder="Tìm SKU, Tên..." className="pl-9 h-9" />
+            <Input
+              placeholder="Tìm tên, slug, brand..."
+              className="pl-9 h-9"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-slate-50 text-slate-600 font-medium border-b">
-              <tr>
-                <th className="px-6 py-3">Sản phẩm</th>
-                <th className="px-6 py-3">Danh mục</th>
-                <th className="px-6 py-3">Độ tuổi</th>
-                <th className="px-6 py-3">Tồn kho</th>
-                <th className="px-6 py-3">Giá bán</th>
-                <th className="px-6 py-3 text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {PRODUCTS.slice(0, 10).map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 flex items-center gap-3">
-                    <img src={p.image_url} alt={p.name} className="w-12 h-12 rounded object-cover border" />
-                    <div>
-                      <div className="font-bold text-slate-800">{p.name}</div>
-                      <div className="text-xs text-slate-500">Thương hiệu: {p.brand}</div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">{p.category}</td>
-                  <td className="px-6 py-4">{p.age}</td>
-                  <td className="px-6 py-4">
-                    <span className={`font-bold ${p.stock < 15 ? 'text-red-500' : 'text-green-600'}`}>
-                      {p.stock}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 font-semibold">{p.price.toLocaleString('vi-VN')}đ</td>
-                  <td className="px-6 py-4 text-right">
-                    <Button variant="ghost" size="icon" className="w-8 h-8 text-blue-600 hover:bg-blue-50"><Edit className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="w-8 h-8 text-red-600 hover:bg-red-50"><Trash2 className="w-4 h-4" /></Button>
-                  </td>
+          {loading && (
+            <div className="p-6 text-slate-500">Đang tải sản phẩm...</div>
+          )}
+          {!loading && filteredProducts.length === 0 && (
+            <div className="p-6 text-slate-500">Chưa có sản phẩm nào.</div>
+          )}
+          {filteredProducts.length > 0 && (
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 text-slate-600 font-medium border-b">
+                <tr>
+                  <th className="px-6 py-3">Sản phẩm</th>
+                  <th className="px-6 py-3">Danh mục</th>
+                  <th className="px-6 py-3">Độ tuổi</th>
+                  <th className="px-6 py-3">Tồn kho</th>
+                  <th className="px-6 py-3">Giá bán</th>
+                  <th className="px-6 py-3 text-right">Thao tác</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredProducts.map((product) => (
+                  <tr key={product.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-4 flex items-center gap-3">
+                      <img src={product.image_url || ""} alt={product.name} className="w-12 h-12 rounded object-cover border" />
+                      <div>
+                        <div className="font-bold text-slate-800">{product.name}</div>
+                        <div className="text-xs text-slate-500">Thương hiệu: {product.brand || "-"}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">{getCategoryName(product.category_id)}</td>
+                    <td className="px-6 py-4">{product.age_range || "-"}</td>
+                    <td className="px-6 py-4">
+                      <span className={`font-bold ${product.stock < 15 ? "text-red-500" : "text-green-600"}`}>
+                        {product.stock}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 font-semibold">{product.price.toLocaleString("vi-VN")}đ</td>
+                    <td className="px-6 py-4 text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-8 h-8 text-blue-600 hover:bg-blue-50"
+                        onClick={() => handleEdit(product)}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-8 h-8 text-red-600 hover:bg-red-50"
+                        onClick={() => handleDelete(product.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </CardContent>
       </Card>
     </div>

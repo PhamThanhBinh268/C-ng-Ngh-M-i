@@ -1,14 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sparkles, Send, Bot, User, Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { PRODUCTS } from "@/lib/data";
 import { Card, CardContent } from "@/components/ui/card";
 import { useCartStore } from "@/store/cartStore";
 import { ShoppingCart, Star } from "lucide-react";
+import { createClient } from "@/utils/supabase/client";
+
+type Product = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  image_url: string;
+  category: string;
+  stock: number;
+};
 
 export default function AISuggestionPage() {
   const [query, setQuery] = useState("");
@@ -19,7 +29,43 @@ export default function AISuggestionPage() {
     }
   ]);
   const [loading, setLoading] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
   const addItem = useCartStore(state => state.addItem);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadProducts = async () => {
+      const supabase = createClient();
+      const [{ data: categoryRows }, { data: productRows }] = await Promise.all([
+        supabase.from("categories").select("id, name"),
+        supabase.from("products").select("id, name, description, price, image_url, category_id, stock")
+      ]);
+
+      if (!isActive) return;
+
+      const categoryById = new Map<string, string>();
+      (categoryRows || []).forEach((cat) => categoryById.set(cat.id, cat.name));
+
+      const mapped = (productRows || []).map((product) => ({
+        id: product.id,
+        name: product.name,
+        description: product.description || "",
+        price: Number(product.price || 0),
+        image_url: product.image_url || "",
+        category: categoryById.get(product.category_id) || "",
+        stock: Number(product.stock || 0)
+      }));
+
+      setProducts(mapped);
+    };
+
+    loadProducts();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const handleSend = () => {
     if (!query.trim()) return;
@@ -31,17 +77,26 @@ export default function AISuggestionPage() {
 
     // Simulate AI delay
     setTimeout(() => {
+      if (products.length === 0) {
+        setMessages(prev => [...prev, {
+          role: 'ai',
+          content: 'Mình chưa tải được danh sách sản phẩm. Bạn thử lại sau giúp mình nhé.'
+        }]);
+        setLoading(false);
+        return;
+      }
+
       // Very basic logic to pick some products based on keywords, or just random
       const lowerQuery = userMsg.toLowerCase();
-      let matchedProducts = PRODUCTS.filter(p => 
+      let matchedProducts = products.filter(p => 
         p.name.toLowerCase().includes(lowerQuery) || 
         p.category.toLowerCase().includes(lowerQuery) ||
-        p.description.toLowerCase().includes(lowerQuery)
+        (p.description || "").toLowerCase().includes(lowerQuery)
       );
 
       // If no match, just pick 3 random ones
       if (matchedProducts.length === 0) {
-        matchedProducts = [...PRODUCTS].sort(() => 0.5 - Math.random()).slice(0, 3);
+        matchedProducts = [...products].sort(() => 0.5 - Math.random()).slice(0, 3);
       } else {
         matchedProducts = matchedProducts.slice(0, 3);
       }

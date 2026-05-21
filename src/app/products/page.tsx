@@ -6,11 +6,38 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Star, Filter, Search, ShoppingCart, SlidersHorizontal, Loader2 } from "lucide-react";
+import { Star, Search, ShoppingCart, SlidersHorizontal, Loader2 } from "lucide-react";
 import { useCartStore } from "@/store/cartStore";
-import { PRODUCTS, CATEGORIES } from "@/lib/data";
 import { motion } from "framer-motion";
 import { useSearchParams } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
+
+type Category = {
+  id: string;
+  name: string;
+  slug: string;
+  image_url: string | null;
+  color: string | null;
+  icon: string | null;
+};
+
+type Product = {
+  id: string;
+  name: string;
+  price: number;
+  originalPrice: number;
+  image_url: string;
+  rating: number | null;
+  reviews: number | null;
+  category: string;
+  categoryId: string | null;
+  brand: string | null;
+  age: string;
+  stock: number;
+  isNew: boolean;
+  isSale: boolean;
+  description: string;
+};
 
 function ProductsContent() {
   const searchParams = useSearchParams();
@@ -22,6 +49,10 @@ function ProductsContent() {
   const [minPrice, setMinPrice] = useState<string>("");
   const [maxPrice, setMaxPrice] = useState<string>("");
   const [appliedPrice, setAppliedPrice] = useState({ min: "", max: "" });
+  const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   
   const addItem = useCartStore(state => state.addItem);
 
@@ -31,6 +62,63 @@ function ProductsContent() {
       setSearchTerm(searchParams.get("search") || "");
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadData = async () => {
+      setLoading(true);
+      setLoadError(null);
+
+      const supabase = createClient();
+      const [{ data: categoryRows, error: categoryError }, { data: productRows, error: productError }] = await Promise.all([
+        supabase
+          .from("categories")
+          .select("id, name, slug, image_url, color, icon"),
+        supabase
+          .from("products")
+          .select("id, name, description, price, original_price, stock, image_url, age_range, brand, rating, reviews, is_new, is_sale, category_id")
+      ]);
+
+      if (!isActive) return;
+
+      if (categoryError || productError) {
+        setLoadError(categoryError?.message || productError?.message || "Không tải được dữ liệu.");
+        setLoading(false);
+        return;
+      }
+
+      const safeCategories = (categoryRows || []) as Category[];
+      const categoryById = new Map(safeCategories.map((cat) => [cat.id, cat.name]));
+      const mappedProducts = (productRows || []).map((product) => ({
+        id: product.id,
+        name: product.name,
+        price: Number(product.price || 0),
+        originalPrice: Number(product.original_price || product.price || 0),
+        image_url: product.image_url || "",
+        rating: product.rating ? Number(product.rating) : null,
+        reviews: Number.isFinite(product.reviews) ? product.reviews : null,
+        category: categoryById.get(product.category_id) || "",
+        categoryId: product.category_id || null,
+        brand: product.brand || null,
+        age: product.age_range || "Mọi lứa tuổi",
+        stock: Number(product.stock || 0),
+        isNew: Boolean(product.is_new),
+        isSale: Boolean(product.is_sale),
+        description: product.description || ""
+      }));
+
+      setCategories(safeCategories);
+      setProducts(mappedProducts);
+      setLoading(false);
+    };
+
+    loadData();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const toggleAge = (ageRange: string) => {
     setSelectedAges(prev => 
@@ -50,7 +138,7 @@ function ProductsContent() {
   };
 
   const filteredProducts = useMemo(() => {
-    return PRODUCTS.filter(p => {
+    return products.filter(p => {
       const matchSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchCategory = selectedCategory === "all" || p.categoryId === selectedCategory;
       
@@ -103,7 +191,7 @@ function ProductsContent() {
                   /> 
                   <span className="text-slate-600 group-hover:text-primary font-medium transition-colors">Tất cả sản phẩm</span>
                 </label>
-                {CATEGORIES.map(cat => (
+                {categories.map(cat => (
                   <label key={cat.id} className="flex items-center gap-3 cursor-pointer group">
                     <input 
                       type="radio" 
@@ -172,7 +260,17 @@ function ProductsContent() {
             </div>
           </div>
 
-          {filteredProducts.length === 0 ? (
+          {loading ? (
+            <div className="bg-white rounded-2xl p-16 text-center border border-slate-100 shadow-sm">
+              <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+              <p className="text-slate-500">Đang tải sản phẩm...</p>
+            </div>
+          ) : loadError ? (
+            <div className="bg-white rounded-2xl p-16 text-center border border-slate-100 shadow-sm">
+              <div className="text-5xl mb-4">⚠️</div>
+              <p className="text-slate-600">{loadError}</p>
+            </div>
+          ) : filteredProducts.length === 0 ? (
             <div className="bg-white rounded-2xl p-16 text-center border border-slate-100 shadow-sm">
               <div className="text-6xl mb-4">🔍</div>
               <h3 className="text-xl font-bold text-slate-800 mb-2">Không tìm thấy sản phẩm</h3>
