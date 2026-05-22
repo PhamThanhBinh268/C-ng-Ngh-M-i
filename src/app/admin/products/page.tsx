@@ -109,6 +109,33 @@ export default function AdminProducts() {
     setEditingId(null);
   };
 
+  const getAccessToken = async () => {
+    const supabase = createClient();
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !data.session?.access_token) {
+      throw new Error("Bạn cần đăng nhập Supabase để thao tác quản trị.");
+    }
+    return data.session.access_token;
+  };
+
+  const callAdminApi = async (method: "POST" | "PUT" | "DELETE", body: Record<string, unknown>) => {
+    const token = await getAccessToken();
+    const response = await fetch("/api/admin/products", {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const result = (await response.json()) as { data?: ProductRow; message?: string };
+    if (!response.ok) {
+      throw new Error(result.message || "Không thể thao tác sản phẩm.");
+    }
+    return result.data;
+  };
+
   const handleSubmit = async () => {
     setError(null);
     if (!form.name.trim() || !form.slug.trim() || !form.price || !form.stock) {
@@ -116,7 +143,6 @@ export default function AdminProducts() {
       return;
     }
 
-    const supabase = createClient();
     const payload = {
       name: form.name.trim(),
       slug: form.slug.trim(),
@@ -133,34 +159,31 @@ export default function AdminProducts() {
     };
 
     if (editingId) {
-      const { error: updateError } = await supabase
-        .from("products")
-        .update(payload)
-        .eq("id", editingId);
-
-      if (updateError) {
-        setError(updateError.message);
+      try {
+        const updatedRow = await callAdminApi("PUT", { id: editingId, payload });
+        if (updatedRow) {
+          setProducts((prev) => prev.map((item) => (item.id === editingId ? updatedRow : item)));
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Không thể cập nhật sản phẩm.");
         return;
       }
-
-      setProducts((prev) => prev.map((item) => (item.id === editingId ? { ...item, ...payload } : item)));
       resetForm();
       setShowForm(false);
       return;
     }
 
-    const { data: newRow, error: insertError } = await supabase
-      .from("products")
-      .insert(payload)
-      .select("id, name, slug, description, price, original_price, stock, image_url, age_range, brand, category_id, is_new, is_sale")
-      .single();
-
-    if (insertError || !newRow) {
-      setError(insertError?.message || "Không thể thêm sản phẩm.");
+    try {
+      const newRow = await callAdminApi("POST", { payload });
+      if (!newRow) {
+        setError("Không thể thêm sản phẩm.");
+        return;
+      }
+      setProducts((prev) => [newRow as ProductRow, ...prev]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể thêm sản phẩm.");
       return;
     }
-
-    setProducts((prev) => [newRow as ProductRow, ...prev]);
     resetForm();
     setShowForm(false);
   };
@@ -198,18 +221,12 @@ export default function AdminProducts() {
   };
 
   const handleDelete = async (productId: string) => {
-    const supabase = createClient();
-    const { error: deleteError } = await supabase
-      .from("products")
-      .delete()
-      .eq("id", productId);
-
-    if (deleteError) {
-      setError(deleteError.message);
-      return;
+    try {
+      await callAdminApi("DELETE", { id: productId });
+      setProducts((prev) => prev.filter((item) => item.id !== productId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể xóa sản phẩm.");
     }
-
-    setProducts((prev) => prev.filter((item) => item.id !== productId));
   };
 
   const getCategoryName = (categoryId: string | null) => {

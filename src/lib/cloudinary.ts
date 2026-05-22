@@ -8,15 +8,31 @@ export type CloudinaryUploadResult = {
 
 export async function uploadImageToCloudinary(file: File) {
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+  const apiKey = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
 
-  if (!cloudName || !uploadPreset) {
-    throw new Error("Missing Cloudinary config. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET.");
+  if (!cloudName || !apiKey) {
+    throw new Error("Missing Cloudinary config. Set NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME and NEXT_PUBLIC_CLOUDINARY_API_KEY.");
   }
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signResponse = await fetch("/api/cloudinary/sign", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ timestamp }),
+  });
+
+  if (!signResponse.ok) {
+    const text = await signResponse.text();
+    throw new Error(text || "Could not sign upload.");
+  }
+
+  const { signature } = (await signResponse.json()) as { signature: string };
 
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("upload_preset", uploadPreset);
+  formData.append("api_key", apiKey);
+  formData.append("timestamp", String(timestamp));
+  formData.append("signature", signature);
 
   const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
     method: "POST",

@@ -70,13 +70,39 @@ export default function AdminCategories() {
     setEditingId(null);
   };
 
+  const getAccessToken = async () => {
+    const supabase = createClient();
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !data.session?.access_token) {
+      throw new Error("Bạn cần đăng nhập Supabase để thao tác quản trị.");
+    }
+    return data.session.access_token;
+  };
+
+  const callAdminApi = async (method: "POST" | "PUT" | "DELETE", body: Record<string, unknown>) => {
+    const token = await getAccessToken();
+    const response = await fetch("/api/admin/categories", {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const result = (await response.json()) as { data?: Category; message?: string };
+    if (!response.ok) {
+      throw new Error(result.message || "Không thể thao tác danh mục.");
+    }
+    return result.data;
+  };
+
   const handleSubmit = async () => {
     if (!form.name.trim() || !form.slug.trim()) {
       setError("Vui lòng nhập tên và slug.");
       return;
     }
 
-    const supabase = createClient();
     const payload = {
       name: form.name.trim(),
       slug: form.slug.trim(),
@@ -86,33 +112,30 @@ export default function AdminCategories() {
     };
 
     if (editingId) {
-      const { error: updateError } = await supabase
-        .from("categories")
-        .update(payload)
-        .eq("id", editingId);
-
-      if (updateError) {
-        setError(updateError.message);
+      try {
+        const updatedRow = await callAdminApi("PUT", { id: editingId, payload });
+        if (updatedRow) {
+          setCategories((prev) => prev.map((cat) => (cat.id === editingId ? updatedRow : cat)));
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Không thể cập nhật danh mục.");
         return;
       }
-
-      setCategories((prev) => prev.map((cat) => (cat.id === editingId ? { ...cat, ...payload } : cat)));
       resetForm();
       return;
     }
 
-    const { data: newRow, error: insertError } = await supabase
-      .from("categories")
-      .insert(payload)
-      .select("id, name, slug, image_url, color, icon")
-      .single();
-
-    if (insertError || !newRow) {
-      setError(insertError?.message || "Không thể thêm danh mục.");
+    try {
+      const newRow = await callAdminApi("POST", { payload });
+      if (!newRow) {
+        setError("Không thể thêm danh mục.");
+        return;
+      }
+      setCategories((prev) => [newRow as Category, ...prev]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể thêm danh mục.");
       return;
     }
-
-    setCategories((prev) => [newRow as Category, ...prev]);
     resetForm();
   };
 
@@ -141,18 +164,12 @@ export default function AdminCategories() {
   };
 
   const handleDelete = async (categoryId: string) => {
-    const supabase = createClient();
-    const { error: deleteError } = await supabase
-      .from("categories")
-      .delete()
-      .eq("id", categoryId);
-
-    if (deleteError) {
-      setError(deleteError.message);
-      return;
+    try {
+      await callAdminApi("DELETE", { id: categoryId });
+      setCategories((prev) => prev.filter((cat) => cat.id !== categoryId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể xóa danh mục.");
     }
-
-    setCategories((prev) => prev.filter((cat) => cat.id !== categoryId));
   };
 
   return (
