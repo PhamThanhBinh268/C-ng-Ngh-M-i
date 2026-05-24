@@ -89,15 +89,16 @@ export default function AdminOrders() {
 
       const itemsMap = new Map<string, OrderItemRow[]>();
       (itemRows || []).forEach((row) => {
+        const product = Array.isArray(row.products) ? row.products[0] : row.products;
         const item: OrderItemRow = {
           order_id: row.order_id,
           quantity: row.quantity,
           price_at_time: Number(row.price_at_time || 0),
-          product: row.products
+          product: product
             ? {
-                id: row.products.id ?? null,
-                name: row.products.name ?? null,
-                image_url: row.products.image_url ?? null,
+                id: product.id ?? null,
+                name: product.name ?? null,
+                image_url: product.image_url ?? null,
               }
             : null,
         };

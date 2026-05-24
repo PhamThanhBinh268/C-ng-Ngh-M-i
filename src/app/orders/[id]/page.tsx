@@ -105,18 +105,22 @@ export default function OrderDetailPage() {
           customerEmail: userData.user.email || null,
         });
         setItems(
-          (itemRows || []).map((row) => ({
-            id: row.id,
-            quantity: row.quantity,
-            price_at_time: Number(row.price_at_time || 0),
-            product: row.products
-              ? {
-                  id: row.products.id ?? null,
-                  name: row.products.name ?? null,
-                  image_url: row.products.image_url ?? null,
-                }
-              : null,
-          }))
+          (itemRows || []).map((row) => {
+            const product = Array.isArray(row.products) ? row.products[0] : row.products;
+
+            return {
+              id: row.id,
+              quantity: row.quantity,
+              price_at_time: Number(row.price_at_time || 0),
+              product: product
+                ? {
+                    id: product.id ?? null,
+                    name: product.name ?? null,
+                    image_url: product.image_url ?? null,
+                  }
+                : null,
+            };
+          })
         );
         setLoading(false);
       }

@@ -1,20 +1,18 @@
 import type { NextConfig } from "next";
 
+const supabaseRemotePattern = process.env.NEXT_PUBLIC_SUPABASE_URL
+  ? (() => {
+      const url = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL);
+      url.pathname = "/**";
+      return url;
+    })()
+  : undefined;
+
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "res.cloudinary.com",
-      },
-      ...(process.env.NEXT_PUBLIC_SUPABASE_URL
-        ? [
-            {
-              protocol: "https",
-              hostname: new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname,
-            },
-          ]
-        : []),
+      new URL("https://res.cloudinary.com/**"),
+      ...(supabaseRemotePattern ? [supabaseRemotePattern] : []),
     ],
   },
 };

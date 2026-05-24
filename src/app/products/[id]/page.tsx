@@ -65,6 +65,8 @@ export default function ProductDetailPage() {
         return;
       }
 
+      const category = Array.isArray(data.categories) ? data.categories[0] : data.categories;
+
       setProduct({
         id: data.id,
         name: data.name,
@@ -78,7 +80,7 @@ export default function ProductDetailPage() {
         stock: Number(data.stock || 0),
         isSale: Boolean(data.is_sale),
         description: data.description || "",
-        category: data.categories?.name || ""
+        category: category?.name || ""
       });
       setLoading(false);
     };
