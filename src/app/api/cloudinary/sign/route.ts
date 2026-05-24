@@ -20,5 +20,5 @@ export async function POST(request: Request) {
     .update(signatureBase + apiSecret)
     .digest("hex");
 
-  return NextResponse.json({ signature });
+  return NextResponse.json({ signature, timestamp });
 }

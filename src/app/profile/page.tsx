@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAuthStore } from "@/store/authStore";
@@ -39,18 +40,29 @@ type CustomerRequest = {
   createdAt: string;
 };
 
+type ProfileFormState = {
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  avatarUrl: string;
+};
+
 export default function ProfilePage() {
   const { user, isAuthenticated, updateUser } = useAuthStore();
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [requests, setRequests] = useState<CustomerRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
 
-  const [profileForm, setProfileForm] = useState({
+  const [profileForm, setProfileForm] = useState<ProfileFormState>({
     name: user?.name || "",
     email: user?.email || "",
     phone: "",
     address: "",
+    avatarUrl: user?.avatarUrl || "",
   });
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
 
@@ -66,6 +78,7 @@ export default function ProfilePage() {
     message: "",
   });
   const [requestMessage, setRequestMessage] = useState<string | null>(null);
+  const avatarBucket = "avatars";
 
   useEffect(() => {
     let isActive = true;
@@ -89,7 +102,7 @@ export default function ProfilePage() {
       }
 
       const [{ data: profileRow }, { data: orderRows, error: orderError }, { data: requestRows }] = await Promise.all([
-        supabase.from("profiles").select("full_name, phone, address").eq("id", userData.user.id).single(),
+        supabase.from("profiles").select("full_name, phone, address, avatar_url").eq("id", userData.user.id).single(),
         supabase
           .from("orders")
           .select("id, status, total_amount, created_at")
@@ -132,6 +145,7 @@ export default function ProfilePage() {
           email: userData.user.email || "",
           phone: profileRow?.phone || "",
           address: profileRow?.address || "",
+          avatarUrl: profileRow?.avatar_url || user?.avatarUrl || "",
         }));
 
         setOrders(
@@ -162,7 +176,15 @@ export default function ProfilePage() {
     return () => {
       isActive = false;
     };
-  }, [isAuthenticated, user?.email]);
+  }, [isAuthenticated, user?.email, user?.avatarUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreview?.startsWith("blob:")) {
+        URL.revokeObjectURL(avatarPreview);
+      }
+    };
+  }, [avatarPreview]);
 
   const sortedOrders = useMemo(() => {
     return [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -190,6 +212,7 @@ export default function ProfilePage() {
         full_name: profileForm.name.trim(),
         phone: profileForm.phone.trim(),
         address: profileForm.address.trim(),
+        avatar_url: profileForm.avatarUrl.trim(),
       })
       .eq("id", userData.user.id);
 
@@ -198,8 +221,71 @@ export default function ProfilePage() {
       return;
     }
 
-    updateUser({ name: profileForm.name.trim(), email: profileForm.email.trim() });
+    updateUser({
+      name: profileForm.name.trim(),
+      email: profileForm.email.trim(),
+      avatarUrl: profileForm.avatarUrl.trim() || undefined,
+    });
     setProfileMessage("Đã cập nhật thông tin người dùng.");
+  };
+
+  const handleAvatarUpload = async (file: File) => {
+    const previewUrl = URL.createObjectURL(file);
+    setAvatarPreview((currentPreview) => {
+      if (currentPreview?.startsWith("blob:")) {
+        URL.revokeObjectURL(currentPreview);
+      }
+      return previewUrl;
+    });
+    setAvatarUploading(true);
+    setProfileMessage(null);
+
+    try {
+      const supabase = createClient();
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+
+      if (userError || !userData?.user) {
+        throw new Error("Vui lòng đăng nhập lại.");
+      }
+
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+      const storagePath = `${userData.user.id}/${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(avatarBucket)
+        .upload(storagePath, file, {
+          upsert: true,
+          contentType: file.type,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data: publicUrlData } = supabase.storage.from(avatarBucket).getPublicUrl(storagePath);
+      const publicUrl = publicUrlData.publicUrl;
+
+      const { error: profileUpdateError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: publicUrl })
+        .eq("id", userData.user.id);
+
+      if (profileUpdateError) {
+        throw profileUpdateError;
+      }
+
+      setProfileForm((prev) => ({ ...prev, avatarUrl: publicUrl }));
+      updateUser({
+        name: profileForm.name.trim(),
+        email: profileForm.email.trim(),
+        avatarUrl: publicUrl,
+      });
+      setProfileMessage("Đã cập nhật ảnh đại diện.");
+    } catch (err) {
+      setProfileMessage(err instanceof Error ? err.message : "Không thể tải ảnh đại diện lên.");
+    } finally {
+      setAvatarUploading(false);
+    }
   };
 
   const handlePasswordSubmit = async (event: React.FormEvent) => {
@@ -344,6 +430,42 @@ export default function ProfilePage() {
                     onChange={(e) => setProfileForm((prev) => ({ ...prev, address: e.target.value }))}
                   />
                 </div>
+                <div className="space-y-3">
+                  <Label htmlFor="profile-avatar">Ảnh đại diện</Label>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                    <div className="relative h-20 w-20 rounded-full border bg-slate-100 overflow-hidden flex items-center justify-center shrink-0">
+                      {(avatarPreview || profileForm.avatarUrl) ? (
+                        <Image
+                          src={avatarPreview || profileForm.avatarUrl}
+                          alt="Ảnh đại diện"
+                          fill
+                          sizes="80px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <span className="text-2xl font-bold text-slate-400">
+                          {(profileForm.name || user.name).charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <Input
+                        id="profile-avatar"
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleAvatarUpload(file);
+                          }
+                        }}
+                      />
+                      <p className="text-xs text-slate-500">
+                        {avatarUploading ? "Đang tải ảnh đại diện..." : "Chọn ảnh để tải lên và lưu URL vào Supabase."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 <Button type="submit" className="rounded-full px-8">Cập nhật thông tin</Button>
               </form>
             </CardContent>
@@ -416,7 +538,7 @@ export default function ProfilePage() {
                   <Label htmlFor="request-message">Nội dung</Label>
                   <textarea
                     id="request-message"
-                    className="w-full min-h-[120px] rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="w-full min-h-30 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     value={requestForm.message}
                     onChange={(e) => setRequestForm((prev) => ({ ...prev, message: e.target.value }))}
                     placeholder="Mô tả chi tiết yêu cầu của bạn"

@@ -68,10 +68,17 @@ export default function RegisterPage() {
 
     const user = data.user;
     if (user) {
+      const { data: profileRow } = await supabase
+        .from("profiles")
+        .select("full_name, avatar_url")
+        .eq("id", user.id)
+        .maybeSingle();
+
       login({
         id: user.id,
-        name: fullName || user.email?.split("@")[0] || "",
-        email: user.email || email
+        name: profileRow?.full_name || fullName || user.email?.split("@")[0] || "",
+        email: user.email || email,
+        avatarUrl: profileRow?.avatar_url || undefined
       });
     }
 
@@ -107,10 +114,10 @@ export default function RegisterPage() {
   return (
     <div className="bg-slate-50 min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 px-4 relative overflow-hidden">
       {/* Decoration */}
-      <div className="absolute top-0 left-0 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-3xl -translate-y-1/2 -translate-x-1/3"></div>
+      <div className="absolute top-0 left-0 w-125 h-125 bg-blue-500/10 rounded-full blur-3xl -translate-y-1/2 -translate-x-1/3"></div>
       
       <Card className="w-full max-w-md relative z-10 border-0 shadow-2xl rounded-3xl overflow-hidden">
-        <div className="h-2 bg-gradient-to-r from-blue-500 to-cyan-400"></div>
+        <div className="h-2 bg-linear-to-r from-blue-500 to-cyan-400"></div>
         <CardHeader className="space-y-2 text-center pt-8">
           <CardTitle className="text-3xl font-extrabold tracking-tight">Tạo Tài Khoản</CardTitle>
           <CardDescription className="text-base">

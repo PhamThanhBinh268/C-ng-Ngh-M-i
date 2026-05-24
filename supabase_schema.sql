@@ -5,11 +5,15 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE profiles (
   id UUID REFERENCES auth.users(id) PRIMARY KEY,
   full_name TEXT,
+  avatar_url TEXT,
   phone TEXT,
   address TEXT,
   role TEXT DEFAULT 'customer' CHECK (role IN ('customer', 'admin')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
+
+ALTER TABLE profiles
+  ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 
 -- 2. Categories Table
 CREATE TABLE categories (
@@ -137,6 +141,33 @@ CREATE TABLE banners (
 ALTER TABLE customer_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE coupons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE banners ENABLE ROW LEVEL SECURITY;
+
+-- Storage bucket for user avatars
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true)
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
+
+-- Storage policies for avatars
+CREATE POLICY "Avatar images are publicly accessible." ON storage.objects
+FOR SELECT USING (bucket_id = 'avatars');
+
+CREATE POLICY "Users can upload their own avatar." ON storage.objects
+FOR INSERT WITH CHECK (
+  bucket_id = 'avatars'
+  AND auth.uid()::text = split_part(name, '/', 1)
+);
+
+CREATE POLICY "Users can update their own avatar." ON storage.objects
+FOR UPDATE USING (
+  bucket_id = 'avatars'
+  AND auth.uid()::text = split_part(name, '/', 1)
+);
+
+CREATE POLICY "Users can delete their own avatar." ON storage.objects
+FOR DELETE USING (
+  bucket_id = 'avatars'
+  AND auth.uid()::text = split_part(name, '/', 1)
+);
 
 -- Policies for Profiles
 CREATE POLICY "Public profiles are viewable by everyone." ON profiles FOR SELECT USING (true);

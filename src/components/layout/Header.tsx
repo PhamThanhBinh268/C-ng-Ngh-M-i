@@ -1,5 +1,6 @@
 "use client";
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { ShoppingCart, Search, Menu, User, Sparkles } from 'lucide-react';
 import { useCartStore } from '@/store/cartStore';
@@ -36,7 +37,7 @@ export default function Header() {
           </Button>
           <Link href="/" className="font-extrabold text-2xl tracking-tight text-primary flex items-center gap-2 hover:scale-105 transition-transform">
             <span className="text-3xl">🧸</span> 
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-600">
+            <span className="bg-clip-text text-transparent bg-linear-to-r from-primary to-purple-600">
               ToyStore
             </span>
           </Link>
@@ -89,13 +90,21 @@ export default function Header() {
           {isAuthenticated && user ? (
             <div className="relative group/user">
               <Button variant="ghost" className="hidden sm:flex items-center gap-2 h-12 rounded-full hover:bg-primary/10 transition-colors px-4 border border-slate-200 bg-white">
-                <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold uppercase">
-                  {user.name.charAt(0)}
+                <div className="relative w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold uppercase overflow-hidden">
+                  {user.avatarUrl ? (
+                    <Image src={user.avatarUrl} alt={user.name} fill sizes="24px" className="object-cover" />
+                  ) : (
+                    user.name.charAt(0)
+                  )}
                 </div>
-                <span className="font-medium max-w-[100px] truncate">{user.name}</span>
+                <span className="font-medium max-w-25 truncate">{user.name}</span>
               </Button>
               <Button variant="ghost" size="icon" className="sm:hidden w-12 h-12 rounded-full bg-primary text-primary-foreground">
-                {user.name.charAt(0).toUpperCase()}
+                {user.avatarUrl ? (
+                  <Image src={user.avatarUrl} alt={user.name} width={48} height={48} className="rounded-full object-cover" />
+                ) : (
+                  user.name.charAt(0).toUpperCase()
+                )}
               </Button>
               
               {/* Dropdown */}

@@ -55,8 +55,42 @@ export default function AdminProducts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [localImagePreview, setLocalImagePreview] = useState<string | null>(null);
+  const [imagePreviewReady, setImagePreviewReady] = useState(false);
 
   const isEditing = Boolean(editingId);
+
+  useEffect(() => {
+    if (localImagePreview) {
+      setImagePreviewReady(true);
+      return;
+    }
+
+    const imageUrl = form.image_url.trim();
+    if (!imageUrl) {
+      setImagePreviewReady(false);
+      return;
+    }
+
+    setImagePreviewReady(false);
+    const probe = new Image();
+    probe.onload = () => setImagePreviewReady(true);
+    probe.onerror = () => setImagePreviewReady(false);
+    probe.src = imageUrl;
+
+    return () => {
+      probe.onload = null;
+      probe.onerror = null;
+    };
+  }, [form.image_url, localImagePreview]);
+
+  useEffect(() => {
+    return () => {
+      if (localImagePreview?.startsWith("blob:")) {
+        URL.revokeObjectURL(localImagePreview);
+      }
+    };
+  }, [localImagePreview]);
 
   useEffect(() => {
     let isActive = true;
@@ -107,6 +141,8 @@ export default function AdminProducts() {
   const resetForm = () => {
     setForm(emptyForm);
     setEditingId(null);
+    setLocalImagePreview(null);
+    setImagePreviewReady(false);
   };
 
   const getAccessToken = async () => {
@@ -189,6 +225,9 @@ export default function AdminProducts() {
   };
 
   const handleImageUpload = async (file: File) => {
+    const previewUrl = URL.createObjectURL(file);
+    setLocalImagePreview(previewUrl);
+    setImagePreviewReady(true);
     setUploading(true);
     setError(null);
     try {
@@ -217,6 +256,8 @@ export default function AdminProducts() {
       is_new: Boolean(product.is_new),
       is_sale: Boolean(product.is_sale),
     });
+    setLocalImagePreview(null);
+    setImagePreviewReady(false);
     setShowForm(true);
   };
 
@@ -292,7 +333,11 @@ export default function AdminProducts() {
                   <div className="flex flex-col gap-2">
                     <Input
                       value={form.image_url}
-                      onChange={(e) => setForm((prev) => ({ ...prev, image_url: e.target.value }))}
+                      onChange={(e) => {
+                        setLocalImagePreview(null);
+                        setImagePreviewReady(false);
+                        setForm((prev) => ({ ...prev, image_url: e.target.value }));
+                      }}
                       placeholder="https://..."
                     />
                     <div className="flex items-center gap-3">
@@ -310,8 +355,12 @@ export default function AdminProducts() {
                         {uploading ? "Đang tải ảnh..." : "Chọn ảnh từ thiết bị"}
                       </span>
                     </div>
-                    {form.image_url && (
-                      <img src={form.image_url} alt="preview" className="h-20 w-20 rounded border object-cover" />
+                    {(localImagePreview || (form.image_url && imagePreviewReady)) && (
+                      <img
+                        src={localImagePreview || form.image_url}
+                        alt="preview"
+                        className="h-20 w-20 rounded border object-cover"
+                      />
                     )}
                   </div>
                 </div>
@@ -333,7 +382,7 @@ export default function AdminProducts() {
                 <div>
                   <Label>Mô tả</Label>
                   <textarea
-                    className="w-full min-h-[120px] rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="w-full min-h-30 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     value={form.description}
                     onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
                   />

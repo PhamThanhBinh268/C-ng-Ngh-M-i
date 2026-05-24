@@ -61,10 +61,17 @@ export default function LoginPage() {
 
     const user = data.user;
     if (user) {
+      const { data: profileRow } = await supabase
+        .from("profiles")
+        .select("full_name, avatar_url")
+        .eq("id", user.id)
+        .maybeSingle();
+
       login({
         id: user.id,
-        name: user.user_metadata?.full_name || user.email?.split("@")[0] || "",
-        email: user.email || email
+        name: profileRow?.full_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "",
+        email: user.email || email,
+        avatarUrl: profileRow?.avatar_url || undefined
       });
     }
 
@@ -74,11 +81,11 @@ export default function LoginPage() {
   return (
     <div className="bg-slate-50 min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 px-4 relative overflow-hidden">
       {/* Decoration */}
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
-      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-purple-500/10 rounded-full blur-3xl translate-y-1/3 -translate-x-1/3"></div>
+      <div className="absolute top-0 right-0 w-125 h-125 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3"></div>
+      <div className="absolute bottom-0 left-0 w-125 h-125 bg-purple-500/10 rounded-full blur-3xl translate-y-1/3 -translate-x-1/3"></div>
 
       <Card className="w-full max-w-md relative z-10 border-0 shadow-2xl rounded-3xl overflow-hidden">
-        <div className="h-2 bg-gradient-to-r from-primary to-purple-500"></div>
+        <div className="h-2 bg-linear-to-r from-primary to-purple-500"></div>
         <CardHeader className="space-y-2 text-center pt-8">
           <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2 text-primary">
             <Sparkles className="w-8 h-8" />

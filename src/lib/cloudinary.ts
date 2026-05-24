@@ -23,15 +23,17 @@ export async function uploadImageToCloudinary(file: File) {
 
   if (!signResponse.ok) {
     const text = await signResponse.text();
-    throw new Error(text || "Could not sign upload.");
+    throw new Error(`Sign failed (${signResponse.status}): ${text || signResponse.statusText}`);
   }
 
-  const { signature } = (await signResponse.json()) as { signature: string };
+  const signJson = (await signResponse.json()) as { signature: string; timestamp?: number };
+  const signature = signJson.signature;
+  const usedTimestamp = signJson.timestamp ?? timestamp;
 
   const formData = new FormData();
   formData.append("file", file);
   formData.append("api_key", apiKey);
-  formData.append("timestamp", String(timestamp));
+  formData.append("timestamp", String(usedTimestamp));
   formData.append("signature", signature);
 
   const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
@@ -41,7 +43,7 @@ export async function uploadImageToCloudinary(file: File) {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || "Upload failed.");
+    throw new Error(`Upload failed (${response.status}): ${text || response.statusText}`);
   }
 
   const data = (await response.json()) as CloudinaryUploadResult;
